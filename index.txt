@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Kamera Presensi dan Absensi JBP</title>
+  <style>
+    * { box-sizing: border-box; font-family: Arial, sans-serif; }
+    html, body { margin:0; min-height:100%; background:#111; color:#fff; }
+    body { padding:14px; display:flex; justify-content:center; }
+    .camera-wrap { width:100%; max-width:520px; }
+    h1 { margin:4px 0 12px; text-align:center; font-size:20px; }
+    .info { margin-bottom:10px; padding:10px 12px; border-radius:8px; background:#222; color:#ddd; font-size:13px; line-height:1.45; }
+    .video-box { position:relative; width:100%; overflow:hidden; border-radius:12px; background:#000; }
+    video { display:block; width:100%; height:auto; min-height:300px; max-height:72vh; object-fit:cover; background:#000; transform:scaleX(-1); }
+    .status { margin-top:10px; padding:10px 12px; border-radius:8px; background:#222; color:#ddd; font-size:13px; line-height:1.4; }
+    .actions { display:flex; gap:10px; margin-top:12px; }
+    button { flex:1; border:0; border-radius:9px; padding:14px 12px; font-size:15px; font-weight:700; cursor:pointer; }
+    #capture { background:#1a73e8; color:#fff; }
+    #cancel { background:#666; color:#fff; }
+    button:disabled { opacity:.55; cursor:not-allowed; }
+    .error { margin-top:12px; padding:11px; border-radius:8px; background:#f8d7da; color:#721c24; font-size:13px; line-height:1.4; }
+    @media (max-width:600px) {
+      body { padding:10px; }
+      h1 { font-size:18px; }
+      video { min-height:260px; max-height:68vh; }
+      button { padding:13px 10px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="camera-wrap">
+    <h1>Kamera Presensi dan Absensi JBP</h1>
+
+    <div id="identity" class="info">
+      Kamera Realtime siap digunakan. Data identitas akan diproses saat absensi dikirim.
+    </div>
+
+    <div class="video-box">
+      <video id="video" autoplay playsinline muted></video>
+    </div>
+
+    <div id="status" class="status">Meminta akses kamera...</div>
+
+    <div class="actions">
+      <button id="capture" type="button" disabled>Ambil foto</button>
+      <button id="cancel" type="button">Batal</button>
+    </div>
+
+    <div id="error" style="display:none;"></div>
+    <canvas id="canvas" style="display:none;"></canvas>
+  </main>
+
+<script>
+(function () {
+  "use strict";
+
+  const video = document.getElementById("video");
+  const canvas = document.getElementById("canvas");
+  const captureBtn = document.getElementById("capture");
+  const cancelBtn = document.getElementById("cancel");
+  const statusBox = document.getElementById("status");
+  const errorBox = document.getElementById("error");
+
+  let stream = null;
+  let alreadySent = false;
+
+  function setStatus(text) {
+    statusBox.textContent = text;
+  }
+
+  function showError(text) {
+    errorBox.style.display = "block";
+    errorBox.className = "error";
+    errorBox.textContent = text;
+    setStatus("Kamera belum siap.");
+  }
+
+  function stopCamera() {
+    if (stream) {
+      stream.getTracks().forEach(function (track) {
+        track.stop();
+      });
+      stream = null;
+    }
+    video.srcObject = null;
+    captureBtn.disabled = true;
+  }
+
+  function sendToParent(message) {
+    if (window.opener && !window.opener.closed) {
+      window.opener.postMessage(message, "*");
+      return true;
+    }
+    return false;
+  }
+
+  async function startCamera() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      const msg = "Browser ini tidak mendukung kamera realtime. Gunakan Chrome, Edge, Safari, atau Firefox versi terbaru.";
+      showError(msg);
+      sendToParent({ type: "JBP_CAMERA_ERROR", message: msg });
+      return;
+    }
+
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: "user" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: false
+      });
+
+      video.srcObject = stream;
+      await video.play();
+      captureBtn.disabled = false;
+      setStatus("Kamera aktif. Silakan tekan Ambil foto.");
+    } catch (error) {
+      console.error(error);
+
+      let msg = "Kamera tidak dapat dibuka. Pastikan izin kamera pada browser sudah diizinkan.";
+
+      if (error && error.name === "NotAllowedError") {
+        msg = "Akses kamera ditolak. Izinkan kamera untuk halaman ini, lalu buka kembali kamera.";
+      } else if (error && error.name === "NotFoundError") {
+        msg = "Kamera tidak ditemukan pada perangkat ini.";
+      } else if (error && error.name === "NotReadableError") {
+        msg = "Kamera sedang digunakan aplikasi lain. Tutup aplikasi yang sedang memakai kamera, lalu coba lagi.";
+      }
+
+      showError(msg);
+      sendToParent({ type: "JBP_CAMERA_ERROR", message: msg });
+    }
+  }
+
+  captureBtn.addEventListener("click", function () {
+    if (alreadySent) return;
+
+    if (!stream || !video.videoWidth || !video.videoHeight) {
+      showError("Kamera belum siap. Tunggu sebentar, lalu coba lagi.");
+      return;
+    }
+
+    const fotoTimestampIso = new Date().toISOString();
+
+    captureBtn.disabled = true;
+    setStatus("Mengambil foto...");
+
+    const width = video.videoWidth;
+    const height = video.videoHeight;
+    const maxSize = 1600;
+
+    let w = width;
+    let h = height;
+
+    if (w > h && w > maxSize) {
+      h = Math.round(h * maxSize / w);
+      w = maxSize;
+    } else if (h >= w && h > maxSize) {
+      w = Math.round(w * maxSize / h);
+      h = maxSize;
+    }
+
+    canvas.width = w;
+    canvas.height = h;
+
+    const ctx = canvas.getContext("2d");
+
+    if (!ctx) {
+      alreadySent = false;
+      showError("Browser tidak dapat memproses gambar.");
+      captureBtn.disabled = false;
+      return;
+    }
+
+    ctx.save();
+    ctx.translate(w, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, 0, 0, w, h);
+    ctx.restore();
+
+    const fotoAsli = canvas.toDataURL("image/jpeg", 0.90);
+
+    alreadySent = true;
+    stopCamera();
+    setStatus("Foto berhasil diambil. Mengembalikan foto ke halaman absensi...");
+
+    const sent = sendToParent({
+      type: "JBP_CAMERA_RESULT",
+      dataUrl: fotoAsli,
+      fotoTimestampIso: fotoTimestampIso
+    });
+
+    if (!sent) {
+      alreadySent = false;
+      showError("Halaman absensi tidak ditemukan. Jangan tutup halaman absensi utama.");
+      captureBtn.disabled = false;
+      return;
+    }
+
+    setTimeout(function () {
+      try { window.close(); } catch (e) {}
+    }, 300);
+  });
+
+  cancelBtn.addEventListener("click", function () {
+    stopCamera();
+    sendToParent({ type: "JBP_CAMERA_CANCEL" });
+    try { window.close(); } catch (e) {}
+  });
+
+  window.addEventListener("beforeunload", function () {
+    stopCamera();
+  });
+
+  if (!window.opener) {
+    showError("Halaman kamera harus dibuka dari tombol Kamera Realtime pada sistem absensi.");
+  } else {
+    sendToParent({ type: "JBP_CAMERA_READY" });
+    startCamera();
+  }
+})();
+</script>
+</body>
+</html>
