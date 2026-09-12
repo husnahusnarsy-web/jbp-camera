@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>Kamera Presensi dan Absensi</title>
+  <title>Kamera Presensi dan Absensi JBP</title>
   <style>
     * { box-sizing: border-box; font-family: Arial, sans-serif; }
     html, body { margin:0; min-height:100%; background:#111; color:#fff; }
@@ -30,7 +30,7 @@
 </head>
 <body>
   <main class="camera-wrap">
-    <h1>Kamera Presensi dan Absensi</h1>
+    <h1>Kamera Presensi dan Absensi JBP</h1>
 
     <div id="identity" class="info">
       Kamera Realtime siap digunakan. Data identitas akan diproses saat absensi dikirim.
@@ -143,10 +143,6 @@
       return;
     }
 
-    /*
-     * Catat timestamp TEPAT ketika foto diambil.
-     * Tidak membuat watermark di halaman kamera.
-     */
     const fotoTimestampIso = new Date().toISOString();
 
     captureBtn.disabled = true;
@@ -179,7 +175,6 @@
       return;
     }
 
-    // Pertahankan tampilan kamera depan seperti versi sebelumnya.
     ctx.save();
     ctx.translate(w, 0);
     ctx.scale(-1, 1);
@@ -220,10 +215,6 @@
     stopCamera();
   });
 
-  /*
-   * Tidak ada lagi JBP_CAMERA_CONTEXT.
-   * Kamera dapat mengambil foto tanpa menunggu Nama, Divisi, atau Status.
-   */
   if (!window.opener) {
     showError("Halaman kamera harus dibuka dari tombol Kamera Realtime pada sistem absensi.");
   } else {
